@@ -58,7 +58,7 @@ export function Uploader({ job, onJob }: Props) {
       const j = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, videoName: file.name, ext }),
       });
       if (!j.ok) throw new Error(`jobs: ${j.status}`);
       onJob(await j.json());

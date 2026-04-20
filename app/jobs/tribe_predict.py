@@ -99,34 +99,6 @@ def _write_overlays(preds: np.ndarray, out_lh: Path, out_rh: Path) -> None:
     _write_gifti_4d(arr[:, N_VERTS_PER_HEMI:], out_rh)
 
 
-def _upload(api, local: Path, remote_name: str) -> None:
-    api.upload_file(
-        path_or_fileobj=str(local),
-        path_in_repo=f"{JOB_ID}/{remote_name}",
-        repo_id=DATASET_REPO,
-        repo_type="dataset",
-    )
-
-
-def _patch_meta(api, work: Path, **extra) -> None:
-    """Merge fields into {job_id}/meta.json so the web poller can surface them."""
-    from huggingface_hub import hf_hub_download
-
-    meta_path = work / "meta.json"
-    try:
-        local = hf_hub_download(
-            repo_id=DATASET_REPO,
-            filename=f"{JOB_ID}/meta.json",
-            repo_type="dataset",
-        )
-        data = json.loads(Path(local).read_text())
-    except Exception:
-        data = {}
-    data.update(extra)
-    meta_path.write_text(json.dumps(data, indent=2))
-    _upload(api, meta_path, "meta.json")
-
-
 def main() -> None:
     _ensure_ffmpeg()
     from huggingface_hub import HfApi, snapshot_download
@@ -138,11 +110,6 @@ def main() -> None:
     print(f"[tribe-job] work dir: {work}", flush=True)
 
     try:
-        try:
-            _patch_meta(api, work, status="running", message="Fetching video")
-        except Exception as e:
-            print(f"[tribe-job] meta patch (start) failed: {e}", flush=True)
-
         snapshot_download(
             repo_id=DATASET_REPO,
             repo_type="dataset",
@@ -153,11 +120,6 @@ def main() -> None:
         video_path = _find_video(work / JOB_ID)
         print(f"[tribe-job] video: {video_path}", flush=True)
 
-        try:
-            _patch_meta(api, work, status="running", message="Loading TRIBE model")
-        except Exception:
-            pass
-
         from tribev2.demo_utils import TribeModel
 
         cache_folder = work / "model_cache"
@@ -166,23 +128,12 @@ def main() -> None:
             "facebook/tribev2", cache_folder=str(cache_folder)
         )
         print("[tribe-job] model loaded, extracting events", flush=True)
-        try:
-            _patch_meta(api, work, status="running", message="Extracting events")
-        except Exception:
-            pass
         events = model.get_events_dataframe(video_path=str(video_path))
         print(f"[tribe-job] {len(events)} events, predicting", flush=True)
-
-        try:
-            _patch_meta(
-                api, work, status="running", message="Predicting brain activity"
-            )
-        except Exception:
-            pass
         preds, segments = model.predict(events=events)
         print(f"[tribe-job] preds shape: {preds.shape}", flush=True)
 
-        out_dir = work / JOB_ID
+        out_dir = work / "out" / JOB_ID
         out_dir.mkdir(parents=True, exist_ok=True)
         preds_path = out_dir / "preds.npy"
         overlay_lh = out_dir / "overlay_lh.gii"
@@ -191,11 +142,6 @@ def main() -> None:
 
         preds_f32 = preds.astype(np.float32)
         np.save(preds_path, preds_f32)
-
-        try:
-            _patch_meta(api, work, status="running", message="Writing overlays")
-        except Exception:
-            pass
         _write_overlays(preds_f32, overlay_lh, overlay_rh)
 
         def _end(s) -> float:
@@ -213,41 +159,21 @@ def main() -> None:
         }
         meta_path.write_text(json.dumps(preds_meta, indent=2))
 
-        try:
-            _patch_meta(api, work, status="running", message="Uploading results")
-        except Exception:
-            pass
-        for local, name in [
-            (preds_path, "preds.npy"),
-            (overlay_lh, "overlay_lh.gii"),
-            (overlay_rh, "overlay_rh.gii"),
-            (meta_path, "preds_meta.json"),
-        ]:
-            _upload(api, local, name)
-
-        try:
-            _patch_meta(
-                api,
-                work,
-                status="done",
-                message="",
-                n_timesteps=preds_meta["n_timesteps"],
-                duration=preds_meta["duration"],
-                tr=preds_meta["tr"],
-                hemo_lag=preds_meta["hemo_lag"],
-            )
-        except Exception as e:
-            print(f"[tribe-job] meta patch (done) failed: {e}", flush=True)
+        # Single HF commit for all four result files. We intentionally
+        # avoid per-file upload_file calls and intermediate meta.json
+        # patches; HF caps dataset commits at 128/hour per repo and those
+        # writes were burning the budget.
+        api.upload_folder(
+            folder_path=str(work / "out"),
+            path_in_repo="",
+            repo_id=DATASET_REPO,
+            repo_type="dataset",
+            commit_message=f"tribe predict {JOB_ID}",
+        )
         print("[tribe-job] done", flush=True)
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[tribe-job] ERROR: {e}\n{tb}", flush=True)
-        try:
-            _patch_meta(
-                api, work, status="error", message=f"{type(e).__name__}: {e}"
-            )
-        except Exception:
-            pass
         raise
     finally:
         shutil.rmtree(work, ignore_errors=True)

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
-import { ensureDataset, writeMeta } from "@/lib/hf";
-import { newMeta } from "@/lib/meta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,21 +32,11 @@ export async function POST(req: Request) {
 
   const jobId = randomUUID().replace(/-/g, "").slice(0, 12);
   const e = env();
-  try {
-    await ensureDataset();
-    await writeMeta(newMeta(jobId, videoName, ext));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: `hf setup failed: ${msg}` },
-      { status: 500 },
-    );
-  }
 
-  // Direct-to-HF upload: the browser sends the video straight to
-  // huggingface.co, bypassing Vercel's 4.5 MB body cap. We ship the
-  // HF token here — it MUST be narrowly scoped (write to the dataset
-  // only) since any visitor can read it by calling this endpoint.
+  // No HF commits here. The browser uploads input.<ext> directly to the
+  // dataset (that's 1 commit). meta.json is written later by /api/jobs
+  // after the HF Job is launched. This keeps us well under HF's
+  // 128 commits/hour rate limit per repo.
   return NextResponse.json({
     jobId,
     repo: e.datasetRepo,

@@ -5,7 +5,6 @@ import {
   isTerminalStage,
   readJson,
   readMeta,
-  writeMeta,
 } from "@/lib/hf";
 import type { JobMeta } from "@/lib/meta";
 
@@ -110,12 +109,8 @@ export async function GET(
     updated.message = "Video uploaded; awaiting launch";
   }
 
-  if (JSON.stringify(updated) !== JSON.stringify(meta)) {
-    try {
-      await writeMeta(updated);
-    } catch {
-      // Status snapshot is ephemeral; return it even if writeback fails.
-    }
-  }
+  // Intentionally read-only: we never writeMeta here. HF caps dataset
+  // commits at 128/hour, so poll-time writes added no value but ate
+  // budget. The snapshot is recomputed on every request.
   return NextResponse.json(updated);
 }
