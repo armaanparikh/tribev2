@@ -1,0 +1,24 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#__next {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b0d10;
+  color: #e8e8e8;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font: inherit;
+}

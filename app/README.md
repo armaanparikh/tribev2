@@ -6,9 +6,18 @@ predicted brain state at any moment.
 
 ```
 app/
-├── backend/   FastAPI: uploads, inference, serves mesh + GIFTI overlays
-└── frontend/  Vite + React + Niivue: video player, scrubber, 3D brain
+├── backend/   FastAPI: uploads, inference, serves mesh + GIFTI overlays (local/dev)
+├── frontend/  Vite + React + Niivue: video player, scrubber, 3D brain (local/dev)
+└── jobs/      uv script invoked by HF Jobs; used by both the local HF backend
+              and the Vercel deployment
 ```
+
+There are two supported ways to run this:
+
+| Path | Lives in | When to use |
+| ---- | -------- | ----------- |
+| **Local dev** (FastAPI + Vite) | `app/` | You want to hack on the inference path, run against a local GPU, or use `TRIBE_BACKEND=hf` to test the HF Job plumbing. |
+| **Production** (Next.js on Vercel) | `web/` | You want a public URL. Vercel handles uploads/UI, HF Jobs handles the GPU. See [../web/README.md](../web/README.md). |
 
 ## Prerequisites
 
@@ -81,6 +90,26 @@ then scrub the timeline.
    with the GIFTI overlay attached as layer 1.
 3. Scrubbing the timeline updates `frame4D` on each mesh's overlay —
    no extra network traffic per frame.
+
+## Deploy to Vercel
+
+Production-style deploys live under [`../web/`](../web) (Next.js App
+Router). That project re-uses this repo's `app/jobs/tribe_predict.py`
+verbatim — the Next.js API routes launch it via the HF Jobs REST API,
+and the same GIFTI overlays are written back to a private HF dataset
+for the browser to stream.
+
+```bash
+cd web
+cp .env.example .env.local
+npm install
+npm run dev        # http://localhost:3000
+```
+
+See [../web/README.md](../web/README.md) for the full env var list,
+architecture diagram, and `vercel deploy` instructions. The FastAPI
+backend under `app/backend/` is **not** part of the Vercel deployment
+— it stays as a local-GPU developer path.
 
 ## Notes
 
