@@ -9,12 +9,13 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "tribe_release"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SLURM_PARTITION = os.getenv("SLURM_PARTITION", "")
 SLURM_CONSTRAINT = os.getenv("SLURM_CONSTRAINT", "")
 WANDB_ENTITY = os.getenv("WANDB_ENTITY", "")
-DATADIR = os.getenv("DATAPATH")
-BASEDIR = os.getenv("SAVEPATH")
+DATADIR = os.getenv("DATAPATH", str(REPO_ROOT / "data"))
+BASEDIR = os.getenv("SAVEPATH", str(REPO_ROOT / "output"))
 CACHEDIR = os.path.join(BASEDIR, "cache", PROJECT_NAME)
 SAVEDIR = os.path.join(BASEDIR, "results", PROJECT_NAME)
 N_CPUS = 20

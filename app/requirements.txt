@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+nibabel>=5.2
+nilearn>=0.10
+numpy
+huggingface_hub[cli,hf_xet]>=0.28

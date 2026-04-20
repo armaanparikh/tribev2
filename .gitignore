@@ -16,8 +16,25 @@ cache/
 # Environment / secrets
 .env
 .venv/
+.venv*/
 venv/
 env/
+
+# App runtime artifacts
+app/_cache/
+app/_model_cache/
+app/frontend/node_modules/
+app/frontend/dist/
+web/node_modules/
+web/.next/
+web/out/
+
+# Data / output dirs used by tribev2 defaults
+data/
+output/
+
+# Node
+node_modules/
 
 # IDE
 .vscode/
