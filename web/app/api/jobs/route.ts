@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { ensureDataset, fileExists, runUvJob, writeMeta } from "@/lib/hf";
+import { fileExists, runUvJob } from "@/lib/hf";
 import { newMeta } from "@/lib/meta";
 
 export const runtime = "nodejs";
@@ -34,10 +34,8 @@ export async function POST(req: Request) {
     );
   }
 
-  // Verify the browser already pushed input.<ext> to the dataset. That
-  // upload itself auto-creates the dataset if it didn't exist, but keep
-  // ensureDataset as a cheap idempotent safety net.
-  await ensureDataset();
+  // Read-only check; scanning a file is an HTTP GET on the HF API and
+  // does not count against the 128 commits/hour budget.
   if (!(await fileExists(`${jobId}/input.${ext}`))) {
     return NextResponse.json(
       { error: "video not uploaded yet" },
@@ -55,30 +53,21 @@ export async function POST(req: Request) {
       timeoutSec: e.timeoutSec,
       secrets: { HF_TOKEN: e.hfToken },
     });
-    const launched = {
+    // No writeMeta here — meta is ephemeral and lives in the client.
+    // Any state the poll route needs (hfJobId, ext) is passed by the
+    // client via query string. This keeps server-side HF commits at 0.
+    return NextResponse.json({
       ...base,
       status: "running" as const,
       message: `HF job ${hf.id} ${hf.status?.stage || "queued"}`,
       hfJobId: hf.id,
       hfStage: hf.status?.stage,
-    };
-    // Single commit per job — never written again after this point.
-    // The poll route is read-only; the Python script batches its outputs
-    // into one `upload_folder` commit.
-    await writeMeta(launched);
-    return NextResponse.json(launched);
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const failed = {
-      ...base,
-      status: "error" as const,
-      message: `launch failed: ${msg}`,
-    };
-    try {
-      await writeMeta(failed);
-    } catch {
-      /* commit may fail (rate limit); returning the snapshot is enough */
-    }
-    return NextResponse.json(failed, { status: 500 });
+    return NextResponse.json(
+      { ...base, status: "error" as const, message: `launch failed: ${msg}` },
+      { status: 500 },
+    );
   }
 }

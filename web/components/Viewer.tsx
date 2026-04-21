@@ -112,7 +112,9 @@ export function Viewer({ job, onReset }: Props) {
       >
         <video
           ref={videoRef}
-          src={`/api/jobs/${job.id}/video`}
+          src={`/api/jobs/${job.id}/video?ext=${encodeURIComponent(
+            job.videoExt,
+          )}`}
           style={{
             width: "100%",
             background: "#000",

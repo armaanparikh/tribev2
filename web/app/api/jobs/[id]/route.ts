@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  fileExists,
-  inspectJob,
-  isTerminalStage,
-  readJson,
-  readMeta,
-} from "@/lib/hf";
+import { fileExists, inspectJob, isTerminalStage, readJson } from "@/lib/hf";
+import { newMeta } from "@/lib/meta";
 import type { JobMeta } from "@/lib/meta";
 
 export const runtime = "nodejs";
@@ -20,29 +15,27 @@ interface PredsMeta {
   hemo_lag?: number;
 }
 
+// Poll is fully read-only. It reconstructs a JobMeta snapshot from:
+//   - query params (hfJobId, ext, videoName) carried by the client
+//   - existence of result files in the dataset (preds_meta.json + overlays)
+//   - HF job inspect for mid-flight stage strings
+// No dataset writes, so this never counts against HF's commit budget.
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } },
 ) {
   const jobId = params.id;
   if (!/^[a-f0-9]{8,32}$/i.test(jobId)) {
     return NextResponse.json({ error: "invalid jobId" }, { status: 400 });
   }
-  const meta = await readMeta(jobId);
-  if (!meta) {
-    return NextResponse.json({ error: "unknown jobId" }, { status: 404 });
-  }
+  const url = new URL(req.url);
+  const hfJobId = url.searchParams.get("hfJobId") || undefined;
+  const ext = (url.searchParams.get("ext") || "").toLowerCase();
+  const videoName = url.searchParams.get("videoName") || "input";
 
-  if (meta.status === "done" || meta.status === "error") {
-    return NextResponse.json(meta);
-  }
+  const base = newMeta(jobId, videoName, ext);
+  let updated: JobMeta = { ...base, hfJobId };
 
-  let updated: JobMeta = { ...meta };
-
-  // The HF Jobs REST API is unreliable for detecting completion — jobs
-  // sometimes stay reported as "SCHEDULING" even after they exit. The
-  // dataset is the real source of truth: if `preds_meta.json` and the
-  // overlay files landed there, the job succeeded.
   const overlayLhPath = `${jobId}/overlay_lh.gii`;
   const overlayRhPath = `${jobId}/overlay_rh.gii`;
   const finished = await readJson<PredsMeta>(`${jobId}/preds_meta.json`);
@@ -78,14 +71,16 @@ export async function GET(
           "Job wrote preds_meta.json but overlay GIFTI files are missing. Rerun with the latest tribe_predict.py.",
       };
     }
-  } else if (meta.hfJobId) {
-    // Still in-flight. Surface HF's stage just for messaging — do NOT
-    // use it to gate completion.
+    return NextResponse.json(updated);
+  }
+
+  if (hfJobId) {
     try {
-      const hf = await inspectJob(meta.hfJobId);
+      const hf = await inspectJob(hfJobId);
       updated.hfStage = hf.status?.stage;
       updated.hfMessage = hf.status?.message ?? undefined;
       if (hf.status?.stage) {
+        updated.status = "running";
         updated.message = `HF job ${hf.id} ${hf.status.stage}`;
       }
       if (
@@ -105,12 +100,9 @@ export async function GET(
       const msg = e instanceof Error ? e.message : String(e);
       updated.message = `inspect failed: ${msg}`;
     }
-  } else if (await fileExists(`${jobId}/input.${meta.videoExt}`)) {
+  } else if (ext && (await fileExists(`${jobId}/input.${ext}`))) {
     updated.message = "Video uploaded; awaiting launch";
   }
 
-  // Intentionally read-only: we never writeMeta here. HF caps dataset
-  // commits at 128/hour, so poll-time writes added no value but ate
-  // budget. The snapshot is recomputed on every request.
   return NextResponse.json(updated);
 }

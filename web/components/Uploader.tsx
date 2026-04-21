@@ -14,7 +14,11 @@ export function Uploader({ job, onJob }: Props) {
     if (!job || job.status === "done" || job.status === "error") return;
     const id = setInterval(async () => {
       try {
-        const r = await fetch(`/api/jobs/${job.id}`);
+        const qs = new URLSearchParams();
+        if (job.hfJobId) qs.set("hfJobId", job.hfJobId);
+        if (job.videoExt) qs.set("ext", job.videoExt);
+        if (job.videoName) qs.set("videoName", job.videoName);
+        const r = await fetch(`/api/jobs/${job.id}?${qs.toString()}`);
         if (r.ok) onJob(await r.json());
       } catch {
         /* transient; keep polling */

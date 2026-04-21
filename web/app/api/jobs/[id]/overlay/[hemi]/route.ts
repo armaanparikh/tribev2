@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getFileBlob, readMeta } from "@/lib/hf";
+import { getFileBlob } from "@/lib/hf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,17 +19,8 @@ export async function GET(
       { status: 400 },
     );
   }
-  const meta = await readMeta(jobId);
-  if (!meta) {
-    return NextResponse.json({ error: "unknown jobId" }, { status: 404 });
-  }
-  if (meta.status !== "done") {
-    return NextResponse.json(
-      { error: `overlay not ready (status=${meta.status})` },
-      { status: 409 },
-    );
-  }
-
+  // No meta lookup. If the overlay file doesn't exist the GET just 404s,
+  // and the Viewer only loads these URLs once the poll signals done.
   const hemiShort = hemi === "left" ? "lh" : "rh";
   const path = `${jobId}/overlay_${hemiShort}.gii`;
   const blob = await getFileBlob(path);
